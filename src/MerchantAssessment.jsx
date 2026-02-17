@@ -312,6 +312,24 @@ const SOLUTIONS = {
   },
 };
 
+const FREEDOMPAY_RECOMMENDATION = {
+  id: "freedompay_orchestration",
+  name: "FreedomPay (Strategic Orchestration Fit)",
+  category: "Partner Orchestration / Pan-Regional",
+  host: "FreedomPay orchestration + acquirer routing",
+  geography: ["UK", "Ireland", "Pan-EU"],
+  integration: "Orchestration platform API",
+  terminals: ["Mixed estate (PAX, Ingenico, unattended devices)"],
+  reporting: "FreedomPay platform reporting",
+  ideal: "Complex multi-country programs needing centralized terminal management, device abstraction, and hot-swapping across heterogeneous estates.",
+  considerations: [
+    "Requires partner engagement and joint solution design",
+    "Validate commercial model and implementation ownership early",
+    "Confirm device/certification coverage per market and vertical",
+  ],
+  p2pe: false,
+};
+
 // ─── Questions ──────────────────────────────────────────────────────────────
 const QUESTIONS = [
   {
@@ -489,19 +507,19 @@ function generateRecommendation(answers) {
   if (estate === "simple") { sc.pax_mercury += 3; sc.evo_uci += 3; sc.evo_local_api += 2; }
   if (estate === "complex") { sc.pax_mercury -= 3; sc.evo_uci -= 3; sc.evo_local_api -= 2; }
 
-  const sorted = Object.entries(sc).filter(([_, s]) => s > -50).sort((a, b) => b[1] - a[1]);
-  const primary = SOLUTIONS[sorted[0]?.[0]];
-  const alternatives = sorted.slice(1, 3).filter(([_, s]) => s > 0).map(([k]) => SOLUTIONS[k]);
+  const gpSorted = Object.entries(sc).filter(([_, score]) => score > -50).sort((a, b) => b[1] - a[1]);
+  const gpPrimary = SOLUTIONS[gpSorted[0]?.[0]];
+  const gpAlternatives = gpSorted.slice(1).filter(([_, score]) => score > 0).map(([k]) => SOLUTIONS[k]);
 
   const reasoning = [];
   if (geo === "uk_ireland" || geo === "ireland") reasoning.push("Ireland coverage eliminates Mercury and PAX POSitive stacks (UK-only today). UCI + eService is the only cloud middleware supporting both markets.");
-  if (size === "enterprise" && primary?.host?.includes("eService") && !primary?.host?.includes("Greenhouse")) reasoning.push("⚠ Enterprise merchants typically prefer Greenhouse for its superior My Account reporting. The recommended eService stack uses BRC which is less mature — discuss reporting needs carefully.");
-  if (size === "enterprise" && primary?.host?.includes("Greenhouse")) reasoning.push("Greenhouse stack provides enterprise-grade reporting via My Account with API access — well suited for this merchant's scale.");
+  if (size === "enterprise" && gpPrimary?.host?.includes("eService") && !gpPrimary?.host?.includes("Greenhouse")) reasoning.push("⚠ Enterprise merchants typically prefer Greenhouse for its superior My Account reporting. The top GP-native option uses BRC which is less mature — discuss reporting needs carefully.");
+  if (size === "enterprise" && gpPrimary?.host?.includes("Greenhouse")) reasoning.push("Greenhouse stack provides enterprise-grade reporting via My Account with API access — well suited for this merchant's scale.");
   if (isv === "isv") reasoning.push("Since this is ISV-led, engage the Partner Acquisition team first. They need to assess the broader partnership opportunity before any technical conversations. The ISV must bring more than just this one merchant.");
   if (isv === "merchant" && integ === "cloud") reasoning.push("For merchant-led cloud integrations, identify the ISV and confirm they have a broader pipeline. GP rarely entertains cloud integrations for a single merchant.");
-  if (p2pe === "yes" && !primary?.p2pe) reasoning.push("⚠ P2PE is required but the recommended solution doesn't support it. Consider Ingenico Managed Service for P2PE, or discuss flexibility with the merchant.");
-  if (stack === "greenhouse" && primary?.id?.startsWith("evo")) reasoning.push("⚠ Merchant is currently on Greenhouse. Moving to eService-only (UCI) requires re-boarding and losing My Account reporting. Mercury preserves the Greenhouse relationship.");
-  if (timeline === "urgent" && primary?.id === "evo_uci") reasoning.push("⚠ UCI is still in pilot. Confirm availability with the product team before committing.");
+  if (p2pe === "yes" && !gpPrimary?.p2pe) reasoning.push("⚠ P2PE is required but the top GP-native option doesn't support it. Consider Ingenico Managed Service for P2PE, or discuss flexibility with the merchant.");
+  if (stack === "greenhouse" && gpPrimary?.id?.startsWith("evo")) reasoning.push("⚠ Merchant is currently on Greenhouse. Moving to eService-only (UCI) requires re-boarding and losing My Account reporting. Mercury preserves the Greenhouse relationship.");
+  if (timeline === "urgent" && gpPrimary?.id === "evo_uci") reasoning.push("⚠ UCI is still in pilot. Confirm availability with the product team before committing.");
   if (integ === "cloud") reasoning.push("Cloud integration uses middleware (Mercury or UCI) sitting on the terminal. The middleware intercepts cloud messages and translates them into app-to-app calls to the payment application. All processing and security is handled by the payment app itself.");
   if (form === "unattended") reasoning.push("Treat this as a semi-attended vs fully unattended decision. In-store kiosks are often semi-attended, while outdoor parking/EV are fully unattended and usually need rugged hardware and stricter scheme compliance.");
   if (form === "unattended") reasoning.push("⚠ EV charging can require Visa Fleet 2.0 transaction flagging. That flagging is not supported today, so validate EV requirements before solutioning.");
@@ -511,7 +529,31 @@ function generateRecommendation(answers) {
   if (estate === "complex") freedomPayFit.push("Merchant signaled complex orchestration needs (centralized estate management / hot-swapping). This is a key FreedomPay fit signal.");
   if (integ === "cloud" && size === "enterprise" && (form === "mixed" || form === "unattended")) freedomPayFit.push("Enterprise cloud integration plus mixed/unattended device estate often benefits from FreedomPay's broader terminal orchestration layer.");
 
-  return { primary, alternatives, reasoning, freedomPayFit };
+  let freedomPayScore = 0;
+  if (geo === "europe") freedomPayScore += 3;
+  if (estate === "complex") freedomPayScore += 2;
+  if (integ === "cloud" && size === "enterprise") freedomPayScore += 1;
+  if (form === "mixed" || form === "unattended") freedomPayScore += 1;
+
+  const recommendFreedomPay = freedomPayScore >= 3;
+
+  let recommendationMode = "gp_native";
+  let primary = gpPrimary;
+  let alternatives = gpAlternatives.slice(0, 2);
+  let decisionSummary = "Primary recommendation is GP-native based on your inputs.";
+
+  if (recommendFreedomPay) {
+    recommendationMode = "freedompay_led";
+    primary = FREEDOMPAY_RECOMMENDATION;
+    alternatives = gpSorted.filter(([_, score]) => score > 0).slice(0, 2).map(([k]) => SOLUTIONS[k]);
+    decisionSummary = "Primary recommendation is FreedomPay-led due to orchestration complexity and cross-estate requirements. GP-native options are shown as fallback alternatives.";
+    reasoning.unshift("Primary decision: use a FreedomPay-led architecture and run joint partner discovery before committing to a GP-native stack.");
+  } else if (freedomPayFit.length > 0) {
+    recommendationMode = "gp_native_with_freedompay_signal";
+    decisionSummary = "Primary recommendation is GP-native, with secondary FreedomPay escalation signals to validate during discovery.";
+  }
+
+  return { primary, alternatives, reasoning, freedomPayFit, recommendationMode, decisionSummary };
 }
 
 // ─── Palette ────────────────────────────────────────────────────────────────
@@ -697,13 +739,14 @@ function FlowDiagram({ solutionId }) {
 
 // ─── SolutionCard ───────────────────────────────────────────────────────────
 function SolutionCard({ solution, isAlt }) {
-  const bdr = isAlt ? c.border : c.green;
-  const badge = isAlt ? "ALTERNATIVE" : "RECOMMENDED";
-  const badgeC = isAlt ? c.amber : c.green;
-  const badgeBg = isAlt ? c.amberG : c.greenG2;
+  const isFreedomPay = solution.id === "freedompay_orchestration";
+  const bdr = isAlt ? c.border : (isFreedomPay ? c.amber : c.green);
+  const badge = isAlt ? "ALTERNATIVE" : (isFreedomPay ? "PRIMARY RECOMMENDATION" : "RECOMMENDED");
+  const badgeC = isAlt ? c.amber : (isFreedomPay ? c.amber : c.green);
+  const badgeBg = isAlt ? c.amberG : (isFreedomPay ? c.amberG : c.greenG2);
 
   return (
-    <div style={{ background: c.card, border: `1px solid ${bdr}`, borderRadius: 11, padding: 20, marginBottom: 12, boxShadow: isAlt ? "none" : `0 0 35px ${c.greenG2}` }}>
+    <div style={{ background: c.card, border: `1px solid ${bdr}`, borderRadius: 11, padding: 20, marginBottom: 12, boxShadow: isAlt ? "none" : `0 0 35px ${isFreedomPay ? c.amberG : c.greenG2}` }}>
       <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1.5, color: badgeC, padding: "2px 7px", background: badgeBg, borderRadius: 3, fontFamily: "'JetBrains Mono', monospace" }}>{badge}</span>
 
       <h3 style={{ fontSize: 18, fontWeight: 700, color: c.white, marginTop: 12, marginBottom: 3, fontFamily: "'Space Grotesk', sans-serif" }}>{solution.name}</h3>
@@ -787,6 +830,15 @@ function RecommendationView({ answers, onReset }) {
         <p style={{ fontSize: 12.5, color: c.muted, maxWidth: 460, margin: "0 auto" }}>Recommended solution with alternatives and reasoning based on your inputs.</p>
       </div>
 
+      <div style={{ background: c.card, border: `1px solid ${result.recommendationMode === "freedompay_led" ? c.amber : c.green}`, borderRadius: 9, padding: 16, marginBottom: 18 }}>
+        <div style={{ fontSize: 9, color: result.recommendationMode === "freedompay_led" ? c.amber : c.green, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>
+          PRIMARY RECOMMENDATION
+        </div>
+        <p style={{ fontSize: 12.5, color: c.white, lineHeight: 1.7, marginBottom: 0 }}>
+          {result.decisionSummary}
+        </p>
+      </div>
+
       {result.reasoning.length > 0 && (
         <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 9, padding: 16, marginBottom: 18 }}>
           <div style={{ fontSize: 9, color: c.accent, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>REASONING & NEXT STEPS</div>
@@ -798,7 +850,9 @@ function RecommendationView({ answers, onReset }) {
 
       {result.freedomPayFit.length > 0 && (
         <div style={{ background: c.card, border: `1px solid ${c.amber}`, borderRadius: 9, padding: 16, marginBottom: 18 }}>
-          <div style={{ fontSize: 9, color: c.amber, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>FREEDOMPAY FIT SIGNALS</div>
+          <div style={{ fontSize: 9, color: c.amber, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>
+            {result.recommendationMode === "freedompay_led" ? "WHY FREEDOMPAY IS PRIMARY" : "FREEDOMPAY ESCALATION SIGNALS"}
+          </div>
           {result.freedomPayFit.map((item, i) => (
             <p key={i} style={{ fontSize: 12, color: c.text, lineHeight: 1.7, marginBottom: i < result.freedomPayFit.length - 1 ? 7 : 0 }}>{item}</p>
           ))}
