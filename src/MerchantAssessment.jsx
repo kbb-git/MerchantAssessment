@@ -58,9 +58,16 @@ const CONTEXT = {
   terminal_context: {
     title: "Terminal Form Factors — Matching Hardware to Use Case",
     subtitle: "The A920 Pro is a jack of all trades, master of none",
-    description: "The PAX A920 Pro suits mobile and pay-at-table scenarios well but isn't ideal as a fixed lane device — it's not built for that spec. For multi-lane retail, the PAX A35 (PIN pad) or Ingenico Lane 3000/3600 are better fits. For unattended environments like kiosks, vending machines, and EV charging, the PAX IM30 or Nexgo UN20 are purpose-built with ruggedised designs. The eService stack supports more terminal variety (A920 Pro, A35, A77, IM30 + Ingenico devices), while PAX POSitive currently only supports the A920 Pro.",
+    description: "The PAX A920 Pro suits mobile and pay-at-table scenarios well but isn't ideal as a fixed lane device — it's not built for that spec. For multi-lane retail, the PAX A35 (PIN pad) or Ingenico Lane 3000/3600 are better fits. Kiosks inside staffed stores are often semi-attended, while parking and EV charging are fully unattended and usually need more rugged hardware like IM30 or UN20. The eService stack supports more terminal variety (A920 Pro, A35, A77, IM30 + Ingenico devices), while PAX POSitive currently only supports the A920 Pro.",
     flow: null,
-    detail: "Terminal choice also affects which payment app and integration stack is available. If the merchant needs a specific form factor like a PIN pad (A35) or unattended (IM30), this narrows the solution to the eService stack.",
+    detail: "Terminal choice also affects which payment app and integration stack is available. If the use case is fully unattended (for example EV charging), check scheme flagging requirements early — some flows can require Visa Fleet 2.0 flagging, which we do not support today.",
+  },
+  freedompay_context: {
+    title: "When To Consider FreedomPay",
+    subtitle: "Useful fit-check for complex enterprise estates",
+    description: "Our Android cloud integrations (Mercury/UCI) are strong for standard UK and UK+Ireland deployment patterns, but they are still simpler than FreedomPay's broader enterprise orchestration capabilities. In complex estates, validate whether GP-native is enough before you commit.",
+    flow: null,
+    detail: "Common FreedomPay fit signals: pan-EU rollout beyond UK/Ireland, centralized terminal estate management, and terminal hot-swapping or orchestration requirements across many countries and device types.",
   },
   reporting_context: {
     title: "Reporting — My Account vs BRC",
@@ -190,10 +197,10 @@ const SOLUTION_FLOWS = {
     layers: [
       { label: "CUSTOMER", node: "Customer\nSelf-Service", color: "#4f8ff7" },
       { label: "KIOSK", node: "Kiosk Application\n(ISV Software)", color: "#f97316" },
-      { label: "PAYMENT", node: "Unattended Terminal\nIM30 / UN20", color: "#34d399" },
+      { label: "PAYMENT", node: "Semi-attended /\nUnattended Terminal\nIM30 / UN20", color: "#34d399" },
       { label: "ACQUIRING HOST", node: "eService or\nGreenhouse", color: "#a78bfa" },
     ],
-    note: "Purpose-built for unattended environments. Terminal hardware is ruggedised for high footfall and harsh conditions. Integration typically via UCI, eService API, or App2App depending on stack.",
+    note: "Use this for semi-attended in-store kiosks and fully unattended environments. Fully unattended outdoor use cases (parking, EV charging) often need rugged devices and scheme-specific flags, so validate those requirements early.",
   },
 };
 
@@ -293,14 +300,14 @@ const SOLUTIONS = {
   },
   self_service_kiosk: {
     id: "self_service_kiosk", name: "Self-Service Kiosks",
-    category: "Unattended", host: "Various",
+    category: "Semi-Attended / Unattended", host: "Various",
     geography: ["UK", "Ireland"], merchantSize: ["Enterprise", "SMB"],
     integration: "Varies (typically semi-integrated)",
     terminals: ["PAX IM30", "Nexgo UN20", "Custom kiosk builds"],
-    features: ["Unattended payments", "High footfall handling", "Customer self-service"],
+    features: ["Semi-attended or unattended payments", "High footfall handling", "Customer self-service"],
     reporting: "Depends on stack", architectureKey: null,
-    ideal: "High footfall environments needing customer self-service. Alternative to traditional EPOS for retail, hospitality, quick-service.",
-    considerations: ["Requires robust hardware for durability", "Unattended terminal certification needed"],
+    ideal: "High footfall environments needing customer self-service, including in-store semi-attended kiosks and fully unattended estates.",
+    considerations: ["Requires robust hardware for durability", "Unattended terminal certification may be required", "EV charging can require Visa Fleet 2.0 flagging (not supported today)"],
     p2pe: false,
   },
 };
@@ -366,7 +373,7 @@ const QUESTIONS = [
       { label: "Countertop / Desktop — fixed checkout position", value: "countertop" },
       { label: "Mobile / Portable — table service, on-the-go", value: "mobile" },
       { label: "Retail PIN Pad — multi-lane checkout", value: "pinpad" },
-      { label: "Unattended — kiosks, vending, EV charging", value: "unattended" },
+      { label: "Semi-attended / unattended — kiosks, vending, EV charging", value: "unattended" },
       { label: "Mix of form factors across locations", value: "mixed" },
     ],
     contextKey: "terminal_context",
@@ -421,13 +428,28 @@ const QUESTIONS = [
     contextKey: "timeline_context",
     dynamicContext: null,
   },
+  {
+    id: "estate_complexity",
+    question: "How complex is the terminal estate and orchestration requirement?",
+    why: "GP native Android cloud integrations cover many standard cases, but large multi-country estates can need broader orchestration (centralized terminal management and hot-swapping) where FreedomPay may be a better fit.",
+    options: [
+      { label: "Simple estate — single-country or limited orchestration needs", value: "simple" },
+      { label: "Complex estate — pan-EU, centralized management, hot-swapping required", value: "complex" },
+      { label: "Not sure yet — still discovering", value: "unknown" },
+    ],
+    contextKey: "freedompay_context",
+    dynamicContext: null,
+  },
 ];
 
 // ─── Recommendation Engine ──────────────────────────────────────────────────
 function generateRecommendation(answers) {
   const sc = {};
   Object.keys(SOLUTIONS).forEach((k) => (sc[k] = 0));
-  const { geography: geo, merchant_size: size, isv_led: isv, integration_type: integ, terminal_form: form, reporting: report, p2pe, existing_stack: stack, timeline } = answers;
+  const {
+    geography: geo, merchant_size: size, isv_led: isv, integration_type: integ,
+    terminal_form: form, reporting: report, p2pe, existing_stack: stack, timeline, estate_complexity: estate,
+  } = answers;
 
   if (geo === "ireland" || geo === "uk_ireland") {
     sc.ingenico_managed = sc.pax_mercury = sc.pax_weblink = sc.pax_app2app = -100;
@@ -464,6 +486,8 @@ function generateRecommendation(answers) {
 
   if (timeline === "urgent") { sc.evo_uci -= 5; sc.ingenico_managed += 3; }
   if (timeline === "long_term") { sc.evo_uci += 3; sc.pax_mercury += 2; }
+  if (estate === "simple") { sc.pax_mercury += 3; sc.evo_uci += 3; sc.evo_local_api += 2; }
+  if (estate === "complex") { sc.pax_mercury -= 3; sc.evo_uci -= 3; sc.evo_local_api -= 2; }
 
   const sorted = Object.entries(sc).filter(([_, s]) => s > -50).sort((a, b) => b[1] - a[1]);
   const primary = SOLUTIONS[sorted[0]?.[0]];
@@ -479,8 +503,15 @@ function generateRecommendation(answers) {
   if (stack === "greenhouse" && primary?.id?.startsWith("evo")) reasoning.push("⚠ Merchant is currently on Greenhouse. Moving to eService-only (UCI) requires re-boarding and losing My Account reporting. Mercury preserves the Greenhouse relationship.");
   if (timeline === "urgent" && primary?.id === "evo_uci") reasoning.push("⚠ UCI is still in pilot. Confirm availability with the product team before committing.");
   if (integ === "cloud") reasoning.push("Cloud integration uses middleware (Mercury or UCI) sitting on the terminal. The middleware intercepts cloud messages and translates them into app-to-app calls to the payment application. All processing and security is handled by the payment app itself.");
+  if (form === "unattended") reasoning.push("Treat this as a semi-attended vs fully unattended decision. In-store kiosks are often semi-attended, while outdoor parking/EV are fully unattended and usually need rugged hardware and stricter scheme compliance.");
+  if (form === "unattended") reasoning.push("⚠ EV charging can require Visa Fleet 2.0 transaction flagging. That flagging is not supported today, so validate EV requirements before solutioning.");
 
-  return { primary, alternatives, reasoning };
+  const freedomPayFit = [];
+  if (geo === "europe") freedomPayFit.push("Pan-EU coverage is requested beyond UK/Ireland. FreedomPay may be a better fit for multi-country acquiring and orchestration than GP-native Android middleware.");
+  if (estate === "complex") freedomPayFit.push("Merchant signaled complex orchestration needs (centralized estate management / hot-swapping). This is a key FreedomPay fit signal.");
+  if (integ === "cloud" && size === "enterprise" && (form === "mixed" || form === "unattended")) freedomPayFit.push("Enterprise cloud integration plus mixed/unattended device estate often benefits from FreedomPay's broader terminal orchestration layer.");
+
+  return { primary, alternatives, reasoning, freedomPayFit };
 }
 
 // ─── Palette ────────────────────────────────────────────────────────────────
@@ -761,6 +792,15 @@ function RecommendationView({ answers, onReset }) {
           <div style={{ fontSize: 9, color: c.accent, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>REASONING & NEXT STEPS</div>
           {result.reasoning.map((r, i) => (
             <p key={i} style={{ fontSize: 12, color: c.text, lineHeight: 1.7, marginBottom: i < result.reasoning.length - 1 ? 7 : 0 }}>{r}</p>
+          ))}
+        </div>
+      )}
+
+      {result.freedomPayFit.length > 0 && (
+        <div style={{ background: c.card, border: `1px solid ${c.amber}`, borderRadius: 9, padding: 16, marginBottom: 18 }}>
+          <div style={{ fontSize: 9, color: c.amber, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>FREEDOMPAY FIT SIGNALS</div>
+          {result.freedomPayFit.map((item, i) => (
+            <p key={i} style={{ fontSize: 12, color: c.text, lineHeight: 1.7, marginBottom: i < result.freedomPayFit.length - 1 ? 7 : 0 }}>{item}</p>
           ))}
         </div>
       )}
